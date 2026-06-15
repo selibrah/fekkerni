@@ -96,6 +96,14 @@ export interface QueuePort {
   enqueue(job: Job): Promise<void>;
 }
 
+/**
+ * Sends a DM to a follower. The implementation resolves the creator's token, calls the Graph API,
+ * and maps auth failures to Creator.status='needs_reauth'. Keeps the worker free of token plumbing.
+ */
+export interface MessageSender {
+  send(creatorId: string, recipientId: string, text: string): Promise<SendResult>;
+}
+
 export interface SecretStorePort {
   /** Resolve a creator's access token from its secret ref. */
   getCreatorToken(tokenSecretRef: string): Promise<string>;
