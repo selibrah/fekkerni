@@ -52,13 +52,16 @@ export async function processMessage(message: InboundMessage, deps: ProcessMessa
   }
 
   const plan = await deps.retrieve.retrieve(creatorId, text);
-  const firstContact = await deps.conversations.markDisclosedIfFirst(creatorId, senderId);
+  // Decide disclosure by READING state; only COMMIT it after a confirmed send, so a failed send
+  // never permanently suppresses the one-time disclosure (the job can retry and re-disclose).
+  const disclose = !(await deps.conversations.wasDisclosed(creatorId, senderId));
   const outbound = assembleOutbound({
     plan,
     fallback: deps.copy.fallback,
-    disclosure: firstContact ? deps.copy.disclosure : null,
+    disclosure: disclose ? deps.copy.disclosure : null,
     maxBytes: deps.maxReplyBytes,
   });
-  await deps.sender.send(creatorId, senderId, outbound);
-  log.info('replied', { matched: plan != null, firstContact });
+  const res = await deps.sender.send(creatorId, senderId, outbound);
+  if (res.ok && disclose) await deps.conversations.markDisclosed(creatorId, senderId);
+  log.info('replied', { matched: plan != null, disclosed: res.ok && disclose, sent: res.ok });
 }

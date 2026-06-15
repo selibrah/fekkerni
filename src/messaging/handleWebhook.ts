@@ -29,11 +29,18 @@ export async function handleInbound(messages: InboundMessage[], deps: WebhookDep
       });
       continue;
     }
-    await deps.queue.enqueue({ kind: 'process_message', message });
-    deps.logger.info('enqueued process_message', {
-      mid: message.mid,
-      creatorId: message.creatorId,
-      senderId: message.senderId,
-    });
+    try {
+      await deps.queue.enqueue({ kind: 'process_message', message });
+      deps.logger.info('enqueued process_message', {
+        mid: message.mid,
+        creatorId: message.creatorId,
+        senderId: message.senderId,
+      });
+    } catch (e) {
+      // The mid is already marked seen; if enqueue failed, roll it back so a redelivery re-processes
+      // instead of being deduped away (which would silently drop the message). Don't abort the batch.
+      await deps.dedupe.unmark(message.mid).catch(() => undefined);
+      deps.logger.error('enqueue failed; unmarked mid for retry', { mid: message.mid, error: String(e) });
+    }
   }
 }

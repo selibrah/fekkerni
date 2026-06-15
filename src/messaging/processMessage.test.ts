@@ -67,6 +67,21 @@ describe('processMessage', () => {
     expect(sender.sent[1]?.text.startsWith(defaultCopy.disclosure)).toBe(false);
   });
 
+  it('does NOT mark disclosure delivered when the send fails; a later attempt still discloses', async () => {
+    const conversations = new FakeConversations();
+    const failing = new FakeSender(false);
+    const { deps } = makeDeps({ sender: failing, conversations });
+    await processMessage(msg({ mid: 'f1' }), deps);
+    expect(failing.sent[0]?.text.startsWith(defaultCopy.disclosure)).toBe(true); // attempted with disclosure
+    expect(await conversations.wasDisclosed('C', 'U')).toBe(false); // but NOT committed
+
+    const working = new FakeSender(true);
+    const { deps: deps2 } = makeDeps({ sender: working, conversations });
+    await processMessage(msg({ mid: 'f2' }), deps2);
+    expect(working.sent[0]?.text.startsWith(defaultCopy.disclosure)).toBe(true); // re-disclosed
+    expect(await conversations.wasDisclosed('C', 'U')).toBe(true); // now committed
+  });
+
   it('sends the fallback when retrieval finds nothing', async () => {
     const { deps, sender } = makeDeps({ retrieve: new FakeRetrieve(() => null) });
     await processMessage(msg(), deps);

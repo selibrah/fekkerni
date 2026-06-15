@@ -3,6 +3,7 @@ import { handleInbound } from './handleWebhook';
 import { FakeDedupe, FakeCreators, FakeQueue, silentLogger } from '../testing/fakes';
 import type { InboundMessage } from '../types';
 import type { Creator } from '../types';
+import type { QueuePort } from '../lib/ports';
 
 const activeCreator: Creator = {
   creatorId: 'CREATOR_1',
@@ -55,5 +56,22 @@ describe('handleInbound (ack-then-process front half)', () => {
     d.creators.seed({ ...activeCreator, creatorId: 'C2', status: 'uninstalled' });
     await handleInbound([msg({ creatorId: 'C2', mid: 'm2' })], d);
     expect(d.queue.jobs).toHaveLength(0);
+  });
+
+  it('rolls back the mid when enqueue fails, so a redelivery re-processes it', async () => {
+    const dedupe = new FakeDedupe();
+    const creators = new FakeCreators().seed(activeCreator);
+    const logger = silentLogger();
+    const failing: QueuePort = {
+      async enqueue() {
+        throw new Error('queue unavailable');
+      },
+    };
+    await handleInbound([msg()], { dedupe, creators, queue: failing, logger });
+    expect(dedupe.seen.has('mid_1')).toBe(false); // unmarked, not burned
+
+    const good = new FakeQueue();
+    await handleInbound([msg()], { dedupe, creators, queue: good, logger });
+    expect(good.jobs).toHaveLength(1); // retry succeeds
   });
 });

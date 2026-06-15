@@ -32,7 +32,14 @@ export function createApp(c: Container): express.Express {
 
   // Event delivery: verify signature over the RAW body, ack 200 fast, then process (ADR 003).
   app.post('/webhook', (req: Request, res: Response) => {
-    const raw = (req as RawBodyRequest).rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
+    const raw = (req as RawBodyRequest).rawBody;
+    if (!raw) {
+      // No raw bytes captured (wrong content-type / proxy stripped it). Fabricating bytes would only
+      // ever false-negative the HMAC; surface it instead of silently 403-ing valid events.
+      c.logger.error('webhook: raw body unavailable (content-type?)');
+      res.status(400).send('raw body unavailable');
+      return;
+    }
     if (!verifySignature(raw, req.header('x-hub-signature-256'), c.config.metaAppSecret)) {
       res.status(403).send('invalid signature');
       return;
@@ -91,6 +98,11 @@ export function createApp(c: Container): express.Express {
 
 function start(): void {
   const c = createContainer();
+  if (c.config.queueDriver === 'local') {
+    c.logger.warn(
+      'QUEUE_DRIVER=local: jobs run in-process and are NOT durable across instance shutdown. Use QUEUE_DRIVER=cloudtasks in production.',
+    );
+  }
   const app = createApp(c);
   const port = Number(process.env.PORT ?? 8080);
   app.listen(port, () => c.logger.info('fekkerni listening', { port, queue: c.config.queueDriver }));

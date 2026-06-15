@@ -65,6 +65,9 @@ export function firestoreDedupe(db: Firestore): DedupeStore {
         throw e;
       }
     },
+    async unmark(mid) {
+      await db.collection(COL.seenMids).doc(mid).delete();
+    },
   };
 }
 
@@ -165,14 +168,11 @@ export function firestoreOptOut(db: Firestore): OptOutStore {
 export function firestoreConversations(db: Firestore): ConversationStore {
   const ref = (c: string, u: string) => db.collection(COL.conversations).doc(key(c, u));
   return {
-    async markDisclosedIfFirst(c, u) {
-      try {
-        await ref(c, u).create({ disclosedAt: FieldValue.serverTimestamp() });
-        return true;
-      } catch (e) {
-        if (alreadyExists(e)) return false;
-        throw e;
-      }
+    async wasDisclosed(c, u) {
+      return (await ref(c, u).get()).exists;
+    },
+    async markDisclosed(c, u) {
+      await ref(c, u).set({ disclosedAt: FieldValue.serverTimestamp() }, { merge: true });
     },
   };
 }
@@ -234,7 +234,7 @@ export function firestoreChunks(db: Firestore): ChunkStore {
         .where('creatorId', '==', creatorId)
         .findNearest({
           vectorField: 'embedding',
-          queryVector: FieldValue.vector(queryVector),
+          queryVector, // raw number[] for the query side; FieldValue.vector() is for writes
           limit,
           distanceMeasure: 'COSINE',
           distanceResultField: DISTANCE_FIELD,

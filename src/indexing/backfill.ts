@@ -40,23 +40,20 @@ export function createBackfill(deps: BackfillDeps) {
     const all = await deps.ig.listMedia(token, {});
     all.sort((a, b) => (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0)); // newest first
 
-    // Cost cap: keep all cheap (image) media + the newest N videos.
+    // Cost cap: keep all cheap (image) media + the newest N videos, where N is the TIGHTER of the
+    // video-count cap and the dollar-ceiling-derived cap (so the ceiling actually binds).
     const videos = all.filter(isVideo);
     const nonVideos = all.filter((m) => !isVideo(m));
-    const keptVideos = videos.slice(0, deps.cfg.maxBackfillVideos);
+    const maxByCost = Math.max(1, Math.floor(deps.cfg.backfillCostCeilingUsd / EST_USD_PER_VIDEO));
+    const videoCap = Math.min(deps.cfg.maxBackfillVideos, maxByCost);
+    const keptVideos = videos.slice(0, videoCap);
     const deferredVideos = videos.length - keptVideos.length;
     const estUsd = keptVideos.length * EST_USD_PER_VIDEO;
-    if (estUsd > deps.cfg.backfillCostCeilingUsd) {
-      log.warn('backfill: estimated cost exceeds ceiling — proceeding up to the video cap only', {
-        estUsd,
-        ceiling: deps.cfg.backfillCostCeilingUsd,
-        keptVideos: keptVideos.length,
-      });
-    }
     if (deferredVideos > 0) {
-      log.warn('backfill: deferring oldest videos beyond MAX_BACKFILL_VIDEOS', {
+      log.warn('backfill: deferring oldest videos beyond the cap', {
         deferredVideos,
-        cap: deps.cfg.maxBackfillVideos,
+        videoCap,
+        boundBy: videoCap === maxByCost ? 'cost_ceiling' : 'video_count_cap',
       });
     }
 

@@ -49,6 +49,9 @@ export class FakeDedupe implements DedupeStore {
     this.seen.add(mid);
     return true;
   }
+  async unmark(mid: string): Promise<void> {
+    this.seen.delete(mid);
+  }
 }
 
 export class FakeCreators implements CreatorStore {
@@ -109,11 +112,11 @@ export class FakeOptOut implements OptOutStore {
 
 export class FakeConversations implements ConversationStore {
   readonly disclosed = new Set<string>();
-  async markDisclosedIfFirst(c: string, u: string): Promise<boolean> {
-    const k = `${c}_${u}`;
-    if (this.disclosed.has(k)) return false;
-    this.disclosed.add(k);
-    return true;
+  async wasDisclosed(c: string, u: string): Promise<boolean> {
+    return this.disclosed.has(`${c}_${u}`);
+  }
+  async markDisclosed(c: string, u: string): Promise<void> {
+    this.disclosed.add(`${c}_${u}`);
   }
 }
 
@@ -126,9 +129,10 @@ export class FakeQueue implements QueuePort {
 
 export class FakeSender implements MessageSender {
   readonly sent: { creatorId: string; recipientId: string; text: string }[] = [];
+  constructor(private readonly ok = true) {}
   async send(creatorId: string, recipientId: string, text: string) {
     this.sent.push({ creatorId, recipientId, text });
-    return { ok: true, messageId: `m_${this.sent.length}` };
+    return this.ok ? { ok: true, messageId: `m_${this.sent.length}` } : { ok: false };
   }
 }
 

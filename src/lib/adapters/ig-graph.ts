@@ -5,7 +5,7 @@ import { AuthError, RateLimitError, TransientError } from '../errors';
 
 const MEDIA_FIELDS =
   'id,caption,media_type,media_product_type,media_url,permalink,timestamp,thumbnail_url';
-const MAX_PAGES = 200; // safety bound on pagination
+const MAX_PAGES = 1000; // safety bound on pagination (~25k media; beyond any realistic archive)
 
 interface IgError {
   message?: string;
@@ -16,9 +16,19 @@ interface IgError {
 function mapError(status: number, retryAfter: string | null, body: unknown): Error {
   const err = (body as { error?: IgError } | null)?.error;
   const msg = err?.message ?? `IG Graph error (HTTP ${status})`;
-  if (status === 401 || err?.code === 190) return new AuthError(msg, err);
+  // Auth / permission / deauthorized — NOT transient. Mark needs_reauth, don't backoff-retry.
+  // 190 = invalid token; 10 / 200 = permission; 100/subcode 33 = deauthorized/uninstalled app.
+  const isAuth =
+    status === 401 ||
+    err?.code === 190 ||
+    err?.code === 10 ||
+    err?.code === 200 ||
+    (err?.code === 100 && err?.error_subcode === 33);
+  if (isAuth) return new AuthError(msg, err);
   if (status === 429 || err?.code === 4 || err?.code === 17 || err?.code === 32) {
-    const ms = retryAfter ? Number(retryAfter) * 1000 : undefined;
+    // Graph rarely sends a numeric Retry-After (it uses X-App-Usage); guard against NaN / HTTP-date.
+    const n = retryAfter ? Number(retryAfter) : NaN;
+    const ms = Number.isFinite(n) ? n * 1000 : undefined;
     return new RateLimitError(msg, ms);
   }
   if (status >= 500) return new TransientError(msg, err);

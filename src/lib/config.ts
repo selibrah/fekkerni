@@ -108,5 +108,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (cfg.genaiUseVertex && !cfg.googleCloudProject) {
     throw new Error('GENAI_USE_VERTEX=true requires GOOGLE_CLOUD_PROJECT.');
   }
+  // Fail fast on driver misconfig (instead of a 500 deep in a worker at first use).
+  if (cfg.queueDriver === 'cloudtasks' && (!cfg.workerBaseUrl || !cfg.googleCloudProject)) {
+    throw new Error('QUEUE_DRIVER=cloudtasks requires WORKER_BASE_URL and GOOGLE_CLOUD_PROJECT.');
+  }
+  if (cfg.secretsDriver === 'secretmanager' && !cfg.googleCloudProject) {
+    throw new Error('SECRETS_DRIVER=secretmanager requires GOOGLE_CLOUD_PROJECT.');
+  }
   return cfg;
 }

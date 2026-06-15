@@ -67,7 +67,9 @@ export function parseWebhook(body: unknown): ParseResult {
       }
 
       const tsRaw = event.timestamp;
-      const timestampMs = typeof tsRaw === 'number' ? tsRaw : Date.parse(asString(tsRaw) ?? '') || 0;
+      // Fall back to receipt time (now) for a missing/unparseable timestamp so a valid in-window
+      // message isn't dropped as "outside the window" (webhook latency is only seconds).
+      const timestampMs = typeof tsRaw === 'number' ? tsRaw : Date.parse(asString(tsRaw) ?? '') || Date.now();
 
       messages.push({ creatorId: recipientId, senderId, mid, text, timestampMs });
     }

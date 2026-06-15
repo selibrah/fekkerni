@@ -46,5 +46,8 @@ export function assembleOutbound(opts: {
   const body = opts.plan
     ? buildReply(opts.plan, bodyBudget)
     : truncateToBytes(opts.fallback, bodyBudget);
-  return opts.disclosure ? `${opts.disclosure}\n\n${body}` : body;
+  const composed = opts.disclosure ? `${opts.disclosure}\n\n${body}` : body;
+  // Backstop: buildReply never truncates the cue+permalink suffix, so a very long permalink under a
+  // tight maxBytes could overflow. Guarantee the hard cap (Meta rejects over-length sends).
+  return truncateToBytes(composed, opts.maxBytes);
 }

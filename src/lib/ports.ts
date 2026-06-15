@@ -76,11 +76,15 @@ export interface OptOutStore {
 export interface DedupeStore {
   /** Returns true if `mid` was newly recorded (i.e. NOT seen before — safe to process). */
   markSeen(mid: string): Promise<boolean>;
+  /** Roll back a markSeen if the follow-up work (enqueue) failed, so a redelivery can re-process. */
+  unmark(mid: string): Promise<void>;
 }
 
 export interface ConversationStore {
-  /** Atomically: returns true if this is the FIRST reply in the conversation (=> disclose). */
-  markDisclosedIfFirst(creatorId: string, userId: string): Promise<boolean>;
+  /** Whether the one-time automation disclosure has already been delivered for this conversation. */
+  wasDisclosed(creatorId: string, userId: string): Promise<boolean>;
+  /** Mark the disclosure delivered. Idempotent. Called only AFTER a successful disclosing send. */
+  markDisclosed(creatorId: string, userId: string): Promise<void>;
 }
 
 export interface SendResult {
