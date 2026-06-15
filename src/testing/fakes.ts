@@ -68,6 +68,21 @@ export class FakeCreators implements CreatorStore {
     const c = this.map.get(creatorId);
     if (c) c.pollHighWaterMark = at;
   }
+  async listActive(): Promise<Creator[]> {
+    return [...this.map.values()].filter((c) => c.status === 'active');
+  }
+  async listNeedingRefresh(before: Date): Promise<Creator[]> {
+    return [...this.map.values()].filter(
+      (c) => c.status === 'active' && c.tokenExpiresAt !== null && c.tokenExpiresAt.getTime() <= before.getTime(),
+    );
+  }
+  async setTokenInfo(creatorId: string, info: { tokenSecretRef: string; tokenExpiresAt: Date }): Promise<void> {
+    const c = this.map.get(creatorId);
+    if (c) {
+      c.tokenSecretRef = info.tokenSecretRef;
+      c.tokenExpiresAt = info.tokenExpiresAt;
+    }
+  }
 }
 
 export class FakeOptOut implements OptOutStore {

@@ -92,6 +92,45 @@ export function firestoreCreators(db: Firestore): CreatorStore {
     async setPollHighWaterMark(creatorId, at) {
       await col().doc(creatorId).set({ pollHighWaterMark: Timestamp.fromDate(at) }, { merge: true });
     },
+    async listActive() {
+      const snap = await col().where('status', '==', 'active').get();
+      return snap.docs.map((doc) => {
+        const d = doc.data();
+        return {
+          creatorId: doc.id,
+          tokenSecretRef: String(d.tokenSecretRef ?? ''),
+          tokenExpiresAt: d.tokenExpiresAt instanceof Timestamp ? d.tokenExpiresAt.toDate() : null,
+          status: (d.status as CreatorStatus) ?? 'active',
+          pollHighWaterMark:
+            d.pollHighWaterMark instanceof Timestamp ? d.pollHighWaterMark.toDate() : null,
+        } satisfies Creator;
+      });
+    },
+    async listNeedingRefresh(before) {
+      const snap = await col()
+        .where('status', '==', 'active')
+        .where('tokenExpiresAt', '<=', Timestamp.fromDate(before))
+        .get();
+      return snap.docs.map((doc) => {
+        const d = doc.data();
+        return {
+          creatorId: doc.id,
+          tokenSecretRef: String(d.tokenSecretRef ?? ''),
+          tokenExpiresAt: d.tokenExpiresAt instanceof Timestamp ? d.tokenExpiresAt.toDate() : null,
+          status: (d.status as CreatorStatus) ?? 'active',
+          pollHighWaterMark:
+            d.pollHighWaterMark instanceof Timestamp ? d.pollHighWaterMark.toDate() : null,
+        } satisfies Creator;
+      });
+    },
+    async setTokenInfo(creatorId, info) {
+      await col()
+        .doc(creatorId)
+        .set(
+          { tokenSecretRef: info.tokenSecretRef, tokenExpiresAt: Timestamp.fromDate(info.tokenExpiresAt) },
+          { merge: true },
+        );
+    },
   };
 }
 

@@ -49,6 +49,30 @@ export function createApp(c: Container): express.Express {
     })();
   });
 
+  // Scheduler endpoints (Cloud Scheduler → here with OIDC; protect via Cloud Run IAM invoker).
+  app.post('/internal/poll-all', (_req: Request, res: Response) => {
+    void (async () => {
+      try {
+        const enqueued = await c.pollAll();
+        res.status(200).json({ enqueued });
+      } catch (e) {
+        c.logger.error('poll-all failed', { error: String(e) });
+        res.status(500).send('error');
+      }
+    })();
+  });
+
+  app.post('/internal/refresh-tokens', (_req: Request, res: Response) => {
+    void (async () => {
+      try {
+        res.status(200).json(await c.refreshTokens());
+      } catch (e) {
+        c.logger.error('refresh-tokens failed', { error: String(e) });
+        res.status(500).send('error');
+      }
+    })();
+  });
+
   // Worker endpoint for Cloud Tasks. Non-200 → Cloud Tasks retries with backoff.
   app.post('/tasks', (req: Request, res: Response) => {
     void (async () => {

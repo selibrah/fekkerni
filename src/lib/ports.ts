@@ -52,6 +52,11 @@ export interface CreatorStore {
   get(creatorId: string): Promise<Creator | null>;
   setStatus(creatorId: string, status: Creator['status']): Promise<void>;
   setPollHighWaterMark(creatorId: string, at: Date): Promise<void>;
+  /** All active creators (for the two-stage poll fan-out). */
+  listActive(): Promise<Creator[]>;
+  /** Active creators whose token expires at or before `before` (for the refresh sweep). */
+  listNeedingRefresh(before: Date): Promise<Creator[]>;
+  setTokenInfo(creatorId: string, info: { tokenSecretRef: string; tokenExpiresAt: Date }): Promise<void>;
 }
 
 export interface MediaIndexStore {

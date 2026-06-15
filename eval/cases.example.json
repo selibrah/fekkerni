@@ -1,0 +1,8 @@
+{
+  "creatorId": "REPLACE_WITH_IG_ACCOUNT_ID",
+  "cases": [
+    { "question": "how do I deglaze a pan?", "expectedMediaId": "REPLACE_MEDIA_ID_1" },
+    { "question": "what's your sourdough hydration?", "expectedMediaId": "REPLACE_MEDIA_ID_2" },
+    { "question": "best way to sharpen a knife", "expectedMediaId": "REPLACE_MEDIA_ID_3" }
+  ]
+}

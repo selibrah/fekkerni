@@ -23,6 +23,7 @@ import { createRetriever } from './retrieval/retrieve';
 import { createIndexMedia } from './indexing/indexMedia';
 import { createPollCreator } from './indexing/poll';
 import { createBackfill } from './indexing/backfill';
+import { createRefreshTokens } from './indexing/refreshTokens';
 import type { ChunkStore, EmbeddingPort } from './lib/ports';
 import type { RetrievePort } from './retrieval/types';
 
@@ -38,6 +39,9 @@ export interface Container {
   retrieve: RetrievePort;
   backfill(creatorId: string): Promise<{ enqueued: number; deferredVideos: number }>;
   pollCreator(creatorId: string): Promise<void>;
+  /** Two-stage poll fan-out: enqueue one poll_creator job per active creator. */
+  pollAll(): Promise<number>;
+  refreshTokens(windowDays?: number): Promise<{ refreshed: number; failed: number }>;
   /** Await all in-flight local-queue jobs (no-op for the Cloud Tasks driver). */
   drain(): Promise<void>;
   ingest(body: unknown): Promise<void>;
@@ -105,6 +109,7 @@ export function createContainer(cfg: Config = loadConfig()): Container {
   }
 
   const backfill = createBackfill({ creators, secrets, ig, chunks, queue, cfg, logger });
+  const refreshTokens = createRefreshTokens({ creators, secrets, ig, logger });
   const webhookDeps: WebhookDeps = { dedupe, creators, queue, logger };
 
   return {
@@ -118,6 +123,13 @@ export function createContainer(cfg: Config = loadConfig()): Container {
     retrieve,
     backfill,
     pollCreator,
+    async pollAll() {
+      const active = await creators.listActive();
+      for (const creator of active) await queue.enqueue({ kind: 'poll_creator', creatorId: creator.creatorId });
+      logger.info('pollAll: enqueued', { creators: active.length });
+      return active.length;
+    },
+    refreshTokens,
     drain,
     async ingest(body) {
       const { parseWebhook } = await import('./webhook/parse');

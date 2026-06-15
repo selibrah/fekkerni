@@ -18,7 +18,9 @@
     "search": "tsx src/scripts/search.ts",
     "eval": "tsx src/scripts/eval.ts",
     "backfill": "tsx src/scripts/backfill.ts",
-    "poll": "tsx src/scripts/poll.ts"
+    "poll": "tsx src/scripts/poll.ts",
+    "poll-all": "tsx src/scripts/poll-all.ts",
+    "refresh": "tsx src/scripts/refresh-tokens.ts"
   },
   "dependencies": {
     "@google/genai": "^2.8.0",
