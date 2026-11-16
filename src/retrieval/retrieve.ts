@@ -1,5 +1,6 @@
 import type { ChunkStore, EmbeddingPort, LlmPort } from '../lib/ports';
 import type { Logger } from '../lib/logger';
+import type { UsagePort } from '../lib/usage';
 import type { ReplyPlan, RetrievePort } from './types';
 import { buildPrompt } from './prompt';
 
@@ -9,6 +10,7 @@ export interface RetrieverDeps {
   llm: LlmPort;
   cosineDistanceMax: number;
   logger: Logger;
+  usage: UsagePort;
   limit?: number;
 }
 
@@ -26,6 +28,7 @@ export function createRetriever(deps: RetrieverDeps): RetrievePort {
       if (!trimmed) return null;
 
       const { vector } = await deps.embedding.embed(trimmed, 'RETRIEVAL_QUERY');
+      await deps.usage.increment(creatorId, { embeddingsGenerated: 1 });
       const top = await deps.chunks.findNearest(creatorId, vector, limit);
       const best = top[0];
       if (!best) {
@@ -38,6 +41,7 @@ export function createRetriever(deps: RetrieverDeps): RetrievePort {
       }
 
       const answer = await deps.llm.draftReply(buildPrompt(trimmed, top));
+      await deps.usage.increment(creatorId, { llmCallsMade: 1 });
       if (!answer.trim()) {
         deps.logger.warn('retrieval: empty draft', { creatorId });
         return null;

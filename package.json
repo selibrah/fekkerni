@@ -1,8 +1,7 @@
 {
   "name": "fekkerni",
   "version": "0.1.0",
-  "private": true,
-  "description": "Fekkerni — turn an Instagram creator's content into a DM-searchable knowledge base.",
+  "description": "Fekkerni \u2014 turn an Instagram creator's content into a DM-searchable knowledge base.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -43,5 +42,10 @@
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.19.0",
     "vitest": "^2.1.8"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/selibrah/fekkerni.git"
   }
 }

@@ -12,6 +12,7 @@ import type {
   OptOutStore,
   QueuePort,
   SecretStorePort,
+  SentReplyStore,
   Clock,
 } from '../lib/ports';
 import type {
@@ -276,3 +277,15 @@ function cosineDistance(a: number[], b: number[]): number {
   if (denom === 0) return 2;
   return 1 - dot / denom;
 }
+
+export class FakeSentReplies implements SentReplyStore {
+  readonly sent = new Set<string>();
+  async wasSent(mid: string): Promise<boolean> {
+    return this.sent.has(mid);
+  }
+  async markSent(mid: string): Promise<void> {
+    this.sent.add(mid);
+  }
+}
+
+export { FakeUsage } from '../lib/usage';

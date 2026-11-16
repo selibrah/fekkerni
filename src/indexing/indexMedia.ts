@@ -8,6 +8,7 @@ import type {
   MediaIndexStore,
   SecretStorePort,
 } from '../lib/ports';
+import type { UsagePort } from '../lib/usage';
 import type { ChunkInput, MediaItem, Segment } from '../types';
 import { buildChunkDrafts, computeContentHash, type ChunkInputs } from './chunking';
 
@@ -20,6 +21,7 @@ export interface IndexMediaDeps {
   mediaIndex: MediaIndexStore;
   cfg: Config;
   logger: Logger;
+  usage: UsagePort;
 }
 
 /** Index one media into its chunk set. Idempotent + repairable (ADR 004). */
@@ -44,7 +46,12 @@ export function createIndexMedia(deps: IndexMediaDeps) {
       const segments = await collectSegments(creatorId, media, deps, log);
       const imageDescription =
         deps.cfg.indexImageDescriptions && media.mediaType === 'IMAGE' && media.mediaUrl
-          ? await deps.genai.llm.describeImage({ url: media.mediaUrl })
+          ? await (async () => {
+              const url = media.mediaUrl!;
+              const desc = await deps.genai.llm.describeImage({ url });
+              await deps.usage.increment(creatorId, { llmCallsMade: 1 });
+              return desc;
+            })()
           : null;
 
       const inputs: ChunkInputs = {
@@ -75,6 +82,7 @@ export function createIndexMedia(deps: IndexMediaDeps) {
       const chunkInputs: ChunkInput[] = [];
       for (const draft of drafts) {
         const { vector, norm } = await deps.genai.embedding.embed(draft.text, 'RETRIEVAL_DOCUMENT');
+        await deps.usage.increment(creatorId, { embeddingsGenerated: 1 });
         chunkInputs.push({
           chunkId: `${media.id}_${draft.index}`,
           creatorId,
@@ -113,7 +121,9 @@ async function collectSegments(
       log.warn('index: VIDEO has no media_url (copyright-flagged?), no transcript');
       return [];
     }
-    return deps.genai.llm.transcribeVideo({ url: media.mediaUrl });
+    const segs = await deps.genai.llm.transcribeVideo({ url: media.mediaUrl });
+    await deps.usage.increment(creatorId, { videosTranscribed: 1 });
+    return segs;
   }
   if (media.mediaType === 'CAROUSEL_ALBUM') {
     const creator = await deps.creators.get(creatorId);
@@ -123,7 +133,9 @@ async function collectSegments(
     const segments: Segment[] = [];
     for (const child of children) {
       if (child.mediaType === 'VIDEO' && child.mediaUrl) {
-        segments.push(...(await deps.genai.llm.transcribeVideo({ url: child.mediaUrl })));
+        const segs = await deps.genai.llm.transcribeVideo({ url: child.mediaUrl });
+        await deps.usage.increment(creatorId, { videosTranscribed: 1 });
+        segments.push(...segs);
       }
     }
     return segments;

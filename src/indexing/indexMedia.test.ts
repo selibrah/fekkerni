@@ -9,6 +9,7 @@ import {
   FakeLlm,
   FakeMediaIndex,
   FakeSecrets,
+  FakeUsage,
   silentLogger,
   testConfig,
 } from '../testing/fakes';
@@ -25,6 +26,7 @@ const creator: Creator = {
 function setup(llmSegments: Segment[]) {
   const chunks = new FakeChunkStore();
   const mediaIndex = new FakeMediaIndex();
+  const usage = new FakeUsage();
   const genai: GenAiClients = {
     embedding: new FakeEmbedding((t) => [t.length % 7, 1, 0]),
     llm: new FakeLlm({ segments: llmSegments }),
@@ -38,8 +40,9 @@ function setup(llmSegments: Segment[]) {
     mediaIndex,
     cfg: testConfig(),
     logger: silentLogger(),
+    usage,
   };
-  return { deps, chunks, mediaIndex, genai };
+  return { deps, chunks, mediaIndex, genai, usage };
 }
 
 const videoMedia: MediaItem = {
@@ -118,5 +121,18 @@ describe('indexMedia edge cases', () => {
     const stored = [...chunks.chunks.values()];
     expect(stored).toHaveLength(1);
     expect(stored[0]?.text).toBe('reel caption');
+  });
+
+  it('increments usage counters during transcription and embedding', async () => {
+    const segs: Segment[] = [
+      { startSec: 0, endSec: 30, text: 'intro' },
+      { startSec: 30, endSec: 60, text: 'outro' },
+    ];
+    const { deps, usage } = setup(segs);
+    await createIndexMedia(deps)('C', videoMedia);
+
+    const counts = await usage.getToday('C');
+    expect(counts.videosTranscribed).toBe(1);
+    expect(counts.embeddingsGenerated).toBe(2); // 2 drafts -> 2 embeddings
   });
 });

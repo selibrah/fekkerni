@@ -2,6 +2,7 @@ import type { Config } from '../config';
 import type { IgGraphPort, SendResult } from '../ports';
 import type { MediaItem, MediaProductType, MediaType } from '../../types';
 import { AuthError, RateLimitError, TransientError } from '../errors';
+import { isRetryable, withRetry } from '../retry';
 
 const MEDIA_FIELDS =
   'id,caption,media_type,media_product_type,media_url,permalink,timestamp,thumbnail_url';
@@ -36,16 +37,24 @@ function mapError(status: number, retryAfter: string | null, body: unknown): Err
 }
 
 async function igRequest(url: string, init?: RequestInit): Promise<unknown> {
-  const res = await fetch(url, init);
-  const text = await res.text();
-  let body: unknown = null;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = { raw: text };
-  }
-  if (!res.ok) throw mapError(res.status, res.headers.get('retry-after'), body);
-  return body;
+  return withRetry(
+    async () => {
+      const res = await fetch(url, init);
+      const text = await res.text();
+      let body: unknown = null;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        body = { raw: text };
+      }
+      if (!res.ok) throw mapError(res.status, res.headers.get('retry-after'), body);
+      return body;
+    },
+    {
+      label: 'igRequest',
+      shouldRetry: (e) => !(e instanceof AuthError) && isRetryable(e),
+    },
+  );
 }
 
 function toMediaItem(d: Record<string, unknown>): MediaItem {

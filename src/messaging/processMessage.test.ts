@@ -6,6 +6,7 @@ import {
   FakeConversations,
   FakeSender,
   FakeRetrieve,
+  FakeSentReplies,
   fixedClock,
   silentLogger,
 } from '../testing/fakes';
@@ -26,14 +27,17 @@ function makeDeps(over: Partial<ProcessMessageDeps> = {}): {
   deps: ProcessMessageDeps;
   optout: FakeOptOut;
   conversations: FakeConversations;
+  sentReplies: FakeSentReplies;
   sender: FakeSender;
 } {
   const optout = new FakeOptOut();
   const conversations = new FakeConversations();
+  const sentReplies = new FakeSentReplies();
   const sender = new FakeSender();
   const deps: ProcessMessageDeps = {
     optout,
     conversations,
+    sentReplies,
     sender,
     retrieve: new FakeRetrieve(() => matchPlan),
     clock: fixedClock(NOW),
@@ -43,7 +47,7 @@ function makeDeps(over: Partial<ProcessMessageDeps> = {}): {
     logger: silentLogger(),
     ...over,
   };
-  return { deps, optout, conversations, sender };
+  return { deps, optout, conversations, sentReplies, sender };
 }
 
 const msg = (over: Partial<InboundMessage> = {}): InboundMessage => ({
@@ -134,5 +138,16 @@ describe('processMessage', () => {
     const text = sender.sent[0]?.text ?? '';
     expect(text).not.toContain('phish.example');
     expect(text).toContain('https://instagram.com/p/ABC'); // only the permalink survives
+  });
+
+  it('does not double-send when the same mid is processed twice (send idempotency)', async () => {
+    const { deps, sender, sentReplies } = makeDeps();
+    await processMessage(msg({ mid: 'dup' }), deps);
+    expect(sender.sent).toHaveLength(1);
+    expect(sentReplies.sent.has('dup')).toBe(true);
+
+    // Simulate a task retry with the same mid
+    await processMessage(msg({ mid: 'dup' }), deps);
+    expect(sender.sent).toHaveLength(1); // NOT 2 — idempotent
   });
 });

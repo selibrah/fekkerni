@@ -8,6 +8,7 @@ import type {
   DedupeStore,
   MediaIndexStore,
   OptOutStore,
+  SentReplyStore,
 } from '../ports';
 import type {
   ChunkInput,
@@ -26,6 +27,7 @@ const COL = {
   optouts: 'optouts',
   seenMids: 'seen_mids',
   conversations: 'conversations',
+  sentReplies: 'sent_replies',
 } as const;
 
 const DISTANCE_FIELD = 'vector_distance';
@@ -277,5 +279,20 @@ function chunkToDoc(c: ChunkInput): Record<string, unknown> {
     embeddingNorm: c.embeddingNorm,
     postedAt: Timestamp.fromDate(c.postedAt),
     createdAt: FieldValue.serverTimestamp(),
+  };
+}
+
+// ── Sent replies (send-side idempotency) ─────────────────────────────────────────────
+export function firestoreSentReplies(db: Firestore): SentReplyStore {
+  return {
+    async wasSent(mid) {
+      return (await db.collection(COL.sentReplies).doc(mid).get()).exists;
+    },
+    async markSent(mid) {
+      await db
+        .collection(COL.sentReplies)
+        .doc(mid)
+        .set({ at: FieldValue.serverTimestamp() }, { merge: true });
+    },
   };
 }

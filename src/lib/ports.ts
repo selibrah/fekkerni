@@ -87,6 +87,14 @@ export interface ConversationStore {
   markDisclosed(creatorId: string, userId: string): Promise<void>;
 }
 
+/** Send-side idempotency: prevents duplicate replies when a process_message job is retried. */
+export interface SentReplyStore {
+  /** Returns true if a reply has already been sent for this inbound mid. */
+  wasSent(mid: string): Promise<boolean>;
+  /** Mark a reply as sent for this inbound mid. Called AFTER a successful send. */
+  markSent(mid: string): Promise<void>;
+}
+
 export interface SendResult {
   ok: boolean;
   messageId?: string;

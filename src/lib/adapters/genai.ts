@@ -4,6 +4,7 @@ import type { EmbeddingPort, LlmPort, VideoSource } from '../ports';
 import type { Segment } from '../../types';
 import { l2normalize } from '../normalize';
 import { parseSegments } from '../../indexing/segments';
+import { withRetry } from '../retry';
 
 const TRANSCRIBE_PROMPT = `You are transcribing a short video into spoken-content segments.
 Return ONLY a JSON array (no prose) of objects: {"startSec": number, "endSec": number, "text": string},
@@ -24,16 +25,21 @@ export function genaiAdapter(cfg: Config): GenAiClients {
 
   const embedding: EmbeddingPort = {
     async embed(text, taskType) {
-      const resp = await ai.models.embedContent({
-        model: cfg.embedModel,
-        contents: text,
-        config: { outputDimensionality: cfg.embedDims, taskType },
-      });
-      const values = resp.embeddings?.[0]?.values;
-      if (!values || values.length === 0) throw new Error('Embedding response had no values.');
-      // gemini-embedding-001 at dims != 3072 is NOT normalized by the API — we must (ADR 002).
-      const { vector, norm } = l2normalize(values);
-      return { vector, norm };
+      return withRetry(
+        async () => {
+          const resp = await ai.models.embedContent({
+            model: cfg.embedModel,
+            contents: text,
+            config: { outputDimensionality: cfg.embedDims, taskType },
+          });
+          const values = resp.embeddings?.[0]?.values;
+          if (!values || values.length === 0) throw new Error('Embedding response had no values.');
+          // gemini-embedding-001 at dims != 3072 is NOT normalized by the API — we must (ADR 002).
+          const { vector, norm } = l2normalize(values);
+          return { vector, norm };
+        },
+        { label: 'embed' },
+      );
     },
   };
 
@@ -89,26 +95,36 @@ export function genaiAdapter(cfg: Config): GenAiClients {
     },
 
     async draftReply(prompt) {
-      const resp = await ai.models.generateContent({
-        model: cfg.flashModel,
-        contents: prompt,
-        config: { temperature: 0.2 },
-      });
-      return (resp.text ?? '').trim();
+      return withRetry(
+        async () => {
+          const resp = await ai.models.generateContent({
+            model: cfg.flashModel,
+            contents: prompt,
+            config: { temperature: 0.2 },
+          });
+          return (resp.text ?? '').trim();
+        },
+        { label: 'draftReply' },
+      );
     },
 
     async describeImage(source) {
       const file = await uploadActiveFile({ ...source, mimeType: source.mimeType ?? 'image/jpeg' });
       try {
-        const resp = await ai.models.generateContent({
-          model: cfg.indexModel,
-          contents: [
-            { fileData: { fileUri: file.uri, mimeType: file.mimeType } },
-            { text: 'Describe this image in one short, searchable sentence. No preamble.' },
-          ],
-          config: { temperature: 0.2 },
-        });
-        return (resp.text ?? '').trim();
+        return await withRetry(
+          async () => {
+            const resp = await ai.models.generateContent({
+              model: cfg.indexModel,
+              contents: [
+                { fileData: { fileUri: file.uri, mimeType: file.mimeType } },
+                { text: 'Describe this image in one short, searchable sentence. No preamble.' },
+              ],
+              config: { temperature: 0.2 },
+            });
+            return (resp.text ?? '').trim();
+          },
+          { label: 'describeImage' },
+        );
       } finally {
         await ai.files.delete({ name: file.name }).catch(() => undefined);
       }

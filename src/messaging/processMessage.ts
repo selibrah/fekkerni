@@ -1,5 +1,5 @@
 import type { InboundMessage } from '../types';
-import type { ConversationStore, MessageSender, OptOutStore, Clock } from '../lib/ports';
+import type { ConversationStore, MessageSender, OptOutStore, SentReplyStore, Clock } from '../lib/ports';
 import type { Logger } from '../lib/logger';
 import type { RetrievePort } from '../retrieval/types';
 import { assembleOutbound } from '../retrieval/reply';
@@ -10,6 +10,7 @@ import type { BotCopy } from './copy';
 export interface ProcessMessageDeps {
   optout: OptOutStore;
   conversations: ConversationStore;
+  sentReplies: SentReplyStore;
   sender: MessageSender;
   retrieve: RetrievePort;
   clock: Clock;
@@ -27,16 +28,28 @@ export async function processMessage(message: InboundMessage, deps: ProcessMessa
   const { creatorId, senderId, text } = message;
   const log = deps.logger.child({ mid: message.mid, creatorId, senderId });
 
+  // Send-side idempotency: if we already sent a reply for this mid (task retry), skip.
+  if (await deps.sentReplies.wasSent(message.mid)) {
+    log.info('skip: reply already sent (idempotent)', { mid: message.mid });
+    return;
+  }
+
   const control = classifyControl(text);
   if (control === 'stop') {
     const { transitioned } = await deps.optout.setOptOut(creatorId, senderId);
-    if (transitioned) await deps.sender.send(creatorId, senderId, deps.copy.stopConfirm);
+    if (transitioned) {
+      await deps.sender.send(creatorId, senderId, deps.copy.stopConfirm);
+      await deps.sentReplies.markSent(message.mid);
+    }
     log.info('control: stop', { transitioned });
     return;
   }
   if (control === 'start') {
     const { transitioned } = await deps.optout.clearOptOut(creatorId, senderId);
-    if (transitioned) await deps.sender.send(creatorId, senderId, deps.copy.startConfirm);
+    if (transitioned) {
+      await deps.sender.send(creatorId, senderId, deps.copy.startConfirm);
+      await deps.sentReplies.markSent(message.mid);
+    }
     log.info('control: start', { transitioned });
     return;
   }
@@ -62,6 +75,9 @@ export async function processMessage(message: InboundMessage, deps: ProcessMessa
     maxBytes: deps.maxReplyBytes,
   });
   const res = await deps.sender.send(creatorId, senderId, outbound);
-  if (res.ok && disclose) await deps.conversations.markDisclosed(creatorId, senderId);
+  if (res.ok) {
+    await deps.sentReplies.markSent(message.mid);
+    if (disclose) await deps.conversations.markDisclosed(creatorId, senderId);
+  }
   log.info('replied', { matched: plan != null, disclosed: res.ok && disclose, sent: res.ok });
 }

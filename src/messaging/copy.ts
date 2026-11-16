@@ -13,8 +13,9 @@ export interface BotCopy {
 
 export const defaultCopy: BotCopy = {
   disclosure:
-    "👋 You're chatting with an automated assistant trained on this creator's posts. Reply STOP to opt out.",
+    "👋 You're chatting with an automated assistant trained on this creator's posts. For a human response, wait for the creator to reply directly. Reply STOP to opt out.",
   stopConfirm: "Got it — you won't get automated replies here anymore. Reply START to turn them back on.",
   startConfirm: "You're back on — ask me anything about the creator's posts.",
-  fallback: "I couldn't find that one in the posts — try rephrasing? (Reply STOP to opt out.)",
+  fallback:
+    "I couldn't find that one in the posts — try rephrasing? For a human response, wait for the creator to reply directly. (Reply STOP to opt out.)",
 };

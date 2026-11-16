@@ -8,8 +8,10 @@ import {
   firestoreDedupe,
   firestoreMediaIndex,
   firestoreOptOut,
+  firestoreSentReplies,
   getDb,
 } from './lib/adapters/firestore';
+import { firestoreUsage, FakeUsage } from './lib/usage';
 import { igGraphAdapter } from './lib/adapters/ig-graph';
 import { secretStore } from './lib/adapters/secrets';
 import { genaiAdapter } from './lib/adapters/genai';
@@ -59,8 +61,10 @@ export function createContainer(cfg: Config = loadConfig()): Container {
   const creators = firestoreCreators(db);
   const optout = firestoreOptOut(db);
   const conversations = firestoreConversations(db);
+  const sentReplies = firestoreSentReplies(db);
   const chunks = firestoreChunks(db);
   const mediaIndex = firestoreMediaIndex(db);
+  const usage = cfg.queueDriver === 'local' ? new FakeUsage() : firestoreUsage(db);
 
   const secrets = secretStore(cfg);
   const ig = igGraphAdapter(cfg);
@@ -73,13 +77,14 @@ export function createContainer(cfg: Config = loadConfig()): Container {
     llm: genai.llm,
     cosineDistanceMax: cfg.cosineDistanceMax,
     logger,
+    usage,
   });
 
   // Late-bound so handlers can enqueue more jobs (poll → index_media).
   let queueRef: QueuePort;
   const queue: QueuePort = { enqueue: (job) => queueRef.enqueue(job) };
 
-  const indexMedia = createIndexMedia({ creators, secrets, ig, genai, chunks, mediaIndex, cfg, logger });
+  const indexMedia = createIndexMedia({ creators, secrets, ig, genai, chunks, mediaIndex, cfg, logger, usage });
   const pollCreator = createPollCreator({ creators, secrets, ig, queue, cfg, logger });
 
   const handlers: JobHandlers = {
@@ -87,6 +92,7 @@ export function createContainer(cfg: Config = loadConfig()): Container {
       processMessage(message, {
         optout,
         conversations,
+        sentReplies,
         sender,
         retrieve,
         clock: systemClock,

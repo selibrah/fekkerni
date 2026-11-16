@@ -6,6 +6,7 @@ import { verifySignature } from './lib/signature';
 import { parseWebhook } from './webhook/parse';
 import { handleInbound } from './messaging/handleWebhook';
 import { dispatchJob } from './lib/queue';
+import { oidcMiddleware } from './lib/oidc';
 import type { Job } from './types';
 
 type RawBodyRequest = Request & { rawBody?: Buffer };
@@ -56,32 +57,42 @@ export function createApp(c: Container): express.Express {
     })();
   });
 
+  // OIDC protection for internal/worker endpoints (defense-in-depth).
+  // Enabled when VALIDATE_OIDC=true + OIDC_AUDIENCE are set; disabled in local dev.
+  const internalAuth = oidcMiddleware({
+    enabled: process.env.VALIDATE_OIDC === 'true',
+    audience: process.env.OIDC_AUDIENCE,
+  });
+
   // Scheduler endpoints (Cloud Scheduler → here with OIDC; protect via Cloud Run IAM invoker).
-  app.post('/internal/poll-all', (_req: Request, res: Response) => {
+  // Ack 200 immediately (same ack-then-process pattern as the webhook) so Cloud Scheduler never
+  // retries due to HTTP timeout. The actual work runs async after the response.
+  app.post('/internal/poll-all', internalAuth, (_req: Request, res: Response) => {
+    res.status(200).json({ accepted: true });
     void (async () => {
       try {
         const enqueued = await c.pollAll();
-        res.status(200).json({ enqueued });
+        c.logger.info('poll-all completed', { enqueued });
       } catch (e) {
         c.logger.error('poll-all failed', { error: String(e) });
-        res.status(500).send('error');
       }
     })();
   });
 
-  app.post('/internal/refresh-tokens', (_req: Request, res: Response) => {
+  app.post('/internal/refresh-tokens', internalAuth, (_req: Request, res: Response) => {
+    res.status(200).json({ accepted: true });
     void (async () => {
       try {
-        res.status(200).json(await c.refreshTokens());
+        const result = await c.refreshTokens();
+        c.logger.info('refresh-tokens completed', result);
       } catch (e) {
         c.logger.error('refresh-tokens failed', { error: String(e) });
-        res.status(500).send('error');
       }
     })();
   });
 
   // Worker endpoint for Cloud Tasks. Non-200 → Cloud Tasks retries with backoff.
-  app.post('/tasks', (req: Request, res: Response) => {
+  app.post('/tasks', internalAuth, (req: Request, res: Response) => {
     void (async () => {
       try {
         await dispatchJob(req.body as Job, c.handlers);
